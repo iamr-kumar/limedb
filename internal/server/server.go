@@ -50,6 +50,7 @@ func (s *Server) Start() error {
 
 	s.listener = ln
 	log.Printf("LimeDB server started on %s", s.config.Address)
+	printBanner(s.config.Address)
 
 	for {
 		conn, err := ln.Accept()
@@ -155,4 +156,17 @@ func (s *Server) Stop() error {
 	}
 	s.mutex.Unlock()
 	return nil
+}
+
+func printBanner(address string) {
+	fmt.Print(`
+██╗     ██╗███╗   ███╗███████╗██████╗ ██████╗ 
+██║     ██║████╗ ████║██╔════╝██╔══██╗██╔══██╗
+██║     ██║██╔████╔██║█████╗  ██║  ██║██████╔╝
+██║     ██║██║╚██╔╝██║██╔══╝  ██║  ██║██╔══██╗
+███████╗██║██║ ╚═╝ ██║███████╗██████╔╝██████╔╝
+╚══════╝╚═╝╚═╝     ╚═╝╚══════╝╚═════╝ ╚═════╝
+
+LimeDB listening on: ` + address + `
+	`)
 }
