@@ -7,18 +7,16 @@ import (
 	"syscall"
 
 	"github.com/ritik/limedb/internal/server"
-	"github.com/ritik/limedb/internal/store"
 )
 
 func main() {
-	st := store.NewSharedStore(256) // Default shard count
 	config := &server.Config{
 		Address:        ":8080",
 		ReadTimeout:    0,
 		WriteTimeout:   0,
 		MaxConnections: 0,
 	}
-	srv := server.NewServer(config, st)
+	srv := server.NewServer(config)
 	go func() {
 		if err := srv.Start(); err != nil {
 			log.Printf("Server stopped: %v", err)

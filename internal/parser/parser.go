@@ -47,6 +47,29 @@ func (p *Parser) ParseLine(line string) (*Command, error) {
 		}
 		return &Command{Name: "GET", Key: parts[1]}, nil
 	}
+
+	if strings.HasPrefix(upper, "CREATE ") {
+		parts := strings.SplitN(line, " ", 2)
+		if len(parts) != 2 {
+			return nil, ErrBadFormat
+		}
+
+		return &Command{Name: "CREATE", Key: parts[1]}, nil
+	}
+
+	if strings.HasPrefix(upper, "CONNECT ") {
+		parts := strings.SplitN(line, " ", 2)
+		if len(parts) != 2 {
+			return nil, ErrBadFormat
+		}
+
+		return &Command{Name: "CONNECT", Key: parts[1]}, nil
+	}
+
+	if upper == "EXIT" {
+		return &Command{Name: "EXIT"}, nil
+	}
+
 	return nil, ErrBadCommand
 }
 
@@ -70,4 +93,7 @@ func NotFound() string      { return "NOT FOUND\n" }
 func Value(v string) string { return v + "\n" }
 func Error(message string) string {
 	return "ERROR: " + message + "\n"
+}
+func Success(message string) string {
+	return "SUCCESS: " + message + "\n"
 }

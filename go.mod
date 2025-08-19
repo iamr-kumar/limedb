@@ -1,6 +1,7 @@
 module github.com/ritik/limedb
 
-go 1.21
+go 1.23.0
 
-require (
-)
+toolchain go1.24.5
+
+require golang.org/x/crypto v0.41.0
