@@ -13,7 +13,6 @@ import (
 
 	"github.com/ritik/limedb/internal/database"
 	"github.com/ritik/limedb/internal/parser"
-	"github.com/ritik/limedb/internal/store"
 )
 
 type Config struct {
@@ -27,7 +26,6 @@ type Config struct {
 type Server struct {
 	config      *Config
 	listener    net.Listener
-	store       *store.SharedStore
 	registry    *database.Registry
 	parser      *parser.Parser
 	mutex       sync.Mutex
@@ -290,7 +288,7 @@ func (s *Server) handleCommand(conn net.Conn, session *database.Session, cmd *pa
 			s.writeString(conn, parser.Error("DELETE command requires a key."))
 			return
 		}
-		if session.CurrentDB.Store.Delete(cmd.Key) {
+		if err := session.CurrentDB.Store.Delete(cmd.Key); err != nil {
 			s.writeString(conn, parser.OK())
 		} else {
 			s.writeString(conn, parser.NotFound())

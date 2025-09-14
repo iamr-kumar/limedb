@@ -48,6 +48,14 @@ func (p *Parser) ParseLine(line string) (*Command, error) {
 		return &Command{Name: "GET", Key: parts[1]}, nil
 	}
 
+	if strings.HasPrefix(upper, "DELETE ") {
+		parts := strings.SplitN(line, " ", 2)
+		if len(parts) != 2 {
+			return nil, ErrBadFormat
+		}
+		return &Command{Name: "DELETE", Key: parts[1]}, nil
+	}
+
 	if strings.HasPrefix(upper, "CREATE ") {
 		parts := strings.SplitN(line, " ", 2)
 		if len(parts) != 2 {
