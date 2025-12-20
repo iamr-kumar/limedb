@@ -5,20 +5,21 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
-	"github.com/ritik/limedb/internal_legacy/server"
+	"github.com/ritik/limedb/internal/server"
 )
 
 func main() {
 	config := &server.Config{
 		Address:        ":8080",
-		ReadTimeout:    0,
-		WriteTimeout:   0,
-		MaxConnections: 0,
+		ReadTimeout:    120 * time.Second,
+		WriteTimeout:   30 * time.Second,
+		MaxConnections: 100,
 	}
-	srv := server.NewServer(config)
+	lime := server.NewServer(config)
 	go func() {
-		if err := srv.Start(); err != nil {
+		if err := lime.Start(); err != nil {
 			log.Printf("Server stopped: %v", err)
 		}
 	}()
@@ -30,6 +31,6 @@ func main() {
 	<-sigCh
 
 	log.Println("Shutting down server...")
-	_ = srv.Stop()
+	_ = lime.Stop()
 	log.Println("Server shutdown complete")
 }
