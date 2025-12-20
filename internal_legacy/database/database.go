@@ -8,8 +8,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/ritik/limedb/internal/store"
-	"github.com/ritik/limedb/internal/wal"
+	"github.com/ritik/limedb/internal_legacy/store"
+	"github.com/ritik/limedb/internal_legacy/wal"
 	"golang.org/x/crypto/bcrypt"
 )
 

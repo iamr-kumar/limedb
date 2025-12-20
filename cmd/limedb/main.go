@@ -6,7 +6,7 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/ritik/limedb/internal/server"
+	"github.com/ritik/limedb/internal_legacy/server"
 )
 
 func main() {

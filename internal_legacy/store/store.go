@@ -7,7 +7,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/ritik/limedb/internal/wal"
+	"github.com/ritik/limedb/internal_legacy/wal"
 )
 
 type Entry struct {

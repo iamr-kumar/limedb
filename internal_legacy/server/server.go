@@ -11,8 +11,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/ritik/limedb/internal/database"
-	"github.com/ritik/limedb/internal/parser"
+	"github.com/ritik/limedb/internal_legacy/database"
+	"github.com/ritik/limedb/internal_legacy/parser"
 )
 
 type Config struct {
