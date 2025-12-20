@@ -186,6 +186,7 @@ func (s *SkipList) randomLevel() int {
 
 // NewIterator creates a new iterator for the skip list
 func (s *SkipList) NewIterator() *Iterator {
+	// ? add RLock?
 	it := &Iterator{list: s}
 	it.SeekToFirst()
 	return it
