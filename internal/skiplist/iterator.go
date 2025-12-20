@@ -6,6 +6,7 @@ package skiplist
 type Iterator struct {
 	list    *SkipList
 	current *node
+	locked  bool
 }
 
 // SeekToFirst seeks the iterator to the first element in the skip list

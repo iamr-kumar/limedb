@@ -3,6 +3,7 @@ package skiplist
 import (
 	"bytes"
 	"math/rand"
+	"sync"
 	"time"
 )
 
@@ -37,6 +38,7 @@ type SkipList struct {
 	head  *node
 	level int
 	rand  *rand.Rand
+	mutex sync.RWMutex
 }
 
 // NewSkipList creates a new empty SkipList instance
@@ -53,6 +55,10 @@ func NewSkipList() *SkipList {
 // Insert inserts a key-value pair into the skip list
 // If the key already exists, its value is updated
 func (s *SkipList) Insert(key, value []byte) {
+	// Get the lock for writing
+	s.mutex.Lock()
+	defer s.mutex.Unlock()
+
 	// As we search down through the levels, we need to remember
 	// the last node we visited at each level
 	// This is because when we insert a new node, we need to update
@@ -104,6 +110,10 @@ func (s *SkipList) Insert(key, value []byte) {
 // Get retrieves the value associated with the given key
 // Returns the value and true if found, otherwise nil and false
 func (s *SkipList) Get(key []byte) ([]byte, bool) {
+	// Get the lock for reading
+	s.mutex.RLock()
+	defer s.mutex.RUnlock()
+
 	current := s.head
 	// at each level, traverse as right as possible
 	// until we find a node whose key is >= the target key
@@ -125,6 +135,10 @@ func (s *SkipList) Get(key []byte) ([]byte, bool) {
 // Delete deletes the node with the given key from the skip list
 // Returns true if the node was found and deleted, otherwise false
 func (s *SkipList) Delete(key []byte) bool {
+	// Get the lock for writing
+	s.mutex.Lock()
+	defer s.mutex.Unlock()
+
 	// to track the predecessor nodes at each level
 	// when we delete a node, we need to update their forward pointers
 	// to bypass the deleted node
