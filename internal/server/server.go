@@ -12,9 +12,7 @@ import (
 	"github.com/ritik/limedb/internal/parser"
 )
 
-/*
-Config holds the server configuration parameters
-*/
+// Config holds the server configuration parameters
 type Config struct {
 	// address to bind the server to
 	Address string
@@ -26,9 +24,7 @@ type Config struct {
 	MaxConnections int
 }
 
-/*
-Server represents the LimeDB server
-*/
+// Server represents the LimeDB server
 type Server struct {
 	// server configuration
 	config *Config
@@ -44,9 +40,7 @@ type Server struct {
 	shutdownCh chan struct{}
 }
 
-/*
-Creates a new Server instance with the provided configuration
-*/
+// NewServer creates a new Server instance with the provided configuration
 func NewServer(config *Config) *Server {
 	return &Server{
 		config:      config,
@@ -55,9 +49,7 @@ func NewServer(config *Config) *Server {
 	}
 }
 
-/*
-Starts the LimeDB server and begins listening for incoming connections
-*/
+// Start starts the LimeDB server and begins listening for incoming connections
 func (s *Server) Start() error {
 	ln, err := net.Listen("tcp", s.config.Address)
 	if err != nil {
@@ -95,9 +87,7 @@ func (s *Server) Start() error {
 	}
 }
 
-/*
-Tacks a new connection and checks against MaxConnections limit
-*/
+// trackConnection tracks a new connection and checks against MaxConnections limit
 func (s *Server) trackConnection(conn net.Conn) bool {
 	s.mutex.Lock()
 	defer s.mutex.Unlock()
@@ -113,9 +103,7 @@ func (s *Server) trackConnection(conn net.Conn) bool {
 	return true
 }
 
-/*
-Untracks a connection when it is closed
-*/
+// untrackConnection untracks a connection when it is closed
 func (s *Server) untrackConnection(conn net.Conn) {
 	s.mutex.Lock()
 	defer s.mutex.Unlock()
@@ -184,9 +172,7 @@ func (s *Server) handleCommand(conn net.Conn, command *parser.Command) {
 	}
 }
 
-/*
-Write string response to the connection
-*/
+// writeStringResponse writes string response to the connection
 func (s *Server) writeStringResponse(conn net.Conn, response string) {
 	// Setting write timeout if configured
 	// This helps to avoid hanging connections
@@ -198,9 +184,7 @@ func (s *Server) writeStringResponse(conn net.Conn, response string) {
 	_, _ = conn.Write([]byte(response))
 }
 
-/*
-Closes a specific connection
-*/
+// CloseConnection closes a specific connection
 func (s *Server) CloseConnection(conn net.Conn) {
 	s.mutex.Lock()
 	defer s.mutex.Unlock()
@@ -212,9 +196,7 @@ func (s *Server) CloseConnection(conn net.Conn) {
 	}
 }
 
-/*
-Stops the LimeDB server and closes all active connections
-*/
+// Stop stops the LimeDB server and closes all active connections
 func (s *Server) Stop() error {
 	// Close the listener to stop accepting new connections
 	close(s.shutdownCh)
