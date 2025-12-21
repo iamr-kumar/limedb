@@ -97,8 +97,8 @@ func (filter *BloomFilter) Serialize() ([]byte, error) {
 	buffer := make([]byte, 16+len(filter.bitset))
 
 	// Write size and hashes in little-endian format
-	binary.LittleEndian.PutUint64(buffer[0:8], filter.size)
-	binary.LittleEndian.PutUint64(buffer[8:16], filter.hashes)
+	binary.BigEndian.PutUint64(buffer[0:8], filter.size)
+	binary.BigEndian.PutUint64(buffer[8:16], filter.hashes)
 	// Write bitset
 	copy(buffer[16:], filter.bitset)
 
@@ -112,8 +112,8 @@ func (filter *BloomFilter) Deserialize(data []byte) error {
 	}
 
 	// Read size and hashes
-	filter.size = binary.LittleEndian.Uint64(data[0:8])
-	filter.hashes = binary.LittleEndian.Uint64(data[8:16])
+	filter.size = binary.BigEndian.Uint64(data[0:8])
+	filter.hashes = binary.BigEndian.Uint64(data[8:16])
 
 	// get the expected size of the bitset in bytes
 	expectedBytes := (filter.size + 7) / 8
