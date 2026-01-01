@@ -12,16 +12,17 @@ import (
 const (
 	DefaultBufferSize   = 64 * 1024 // 64KB write buffer
 	DefaultSyncInterval = 1000 * time.Millisecond
+	DefaultSegmentSize  = 64 * 1024 * 1024 // 64MB per segment
 	DefaultDataDir      = "./data"
-	WALFileName         = "wal.log"
 )
 
 // WALOptions holds configuration options for the Write-Ahead Log
 type WALOptions struct {
-	DataDir      string
-	SyncMode     SyncMode
-	SyncInterval time.Duration // in milliseconds
-	BufferSize   int           // write buffer size in bytes
+	DataDir        string
+	SyncMode       SyncMode
+	SyncInterval   time.Duration // in milliseconds
+	BufferSize     int           // write buffer size in bytes
+	MaxSegmentSize int64         // max size of each segment in bytes
 }
 
 // NewWALOptions creates a new WALOptions with default values
@@ -67,10 +68,6 @@ func (options *WALOptions) WALDir() string {
 	return filepath.Join(options.DataDir, "wal")
 }
 
-func (options *WALOptions) WALFilePath() string {
-	return filepath.Join(options.WALDir(), WALFileName)
-}
-
 // SSTDir returns the directory path for SST files
 func (options *WALOptions) SSTDir() string {
 	return filepath.Join(options.DataDir, "sst")
@@ -88,6 +85,11 @@ func (options *WALOptions) Validate() error {
 	// BufferSize must be positive
 	if options.BufferSize <= 0 {
 		return errors.ErrInvalidValueForParameter("BufferSize", options.BufferSize)
+	}
+
+	// MaxSegmentSize must be positive
+	if options.MaxSegmentSize <= 0 {
+		return errors.ErrInvalidValueForParameter("MaxSegmentSize", options.MaxSegmentSize)
 	}
 
 	// SyncInterval must be valid
@@ -126,14 +128,18 @@ func (o *WALOptions) applyDefaults() {
 	if o.SyncInterval <= 0 {
 		o.SyncInterval = DefaultSyncInterval
 	}
+	if o.MaxSegmentSize <= 0 {
+		o.MaxSegmentSize = DefaultSegmentSize
+	}
 }
 
 // Clone creates a deep copy of the options
 func (o *WALOptions) Clone() *WALOptions {
 	return &WALOptions{
-		DataDir:      o.DataDir,
-		SyncMode:     o.SyncMode,
-		SyncInterval: o.SyncInterval,
-		BufferSize:   o.BufferSize,
+		DataDir:        o.DataDir,
+		SyncMode:       o.SyncMode,
+		SyncInterval:   o.SyncInterval,
+		BufferSize:     o.BufferSize,
+		MaxSegmentSize: o.MaxSegmentSize,
 	}
 }
