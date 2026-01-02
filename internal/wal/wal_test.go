@@ -251,3 +251,166 @@ func TestWALConcurrentWritesAssignUniqueSequenceIDs(t *testing.T) {
 		t.Fatalf("unique SequenceIDs = %d, want %d", len(seen), total)
 	}
 }
+
+func TestDeleteSegmentsBeforeDeletesOldSegments(t *testing.T) {
+	tempDir := t.TempDir()
+	opts := NewWALOptions().WithDataDir(tempDir).WithSyncMode(SyncImmediate)
+	opts.MaxSegmentSize = 1 // force rotation on each write
+
+	wal, err := NewWAL(opts)
+	if err != nil {
+		t.Fatalf("NewWAL() error = %v", err)
+	}
+	defer wal.Close()
+
+	// Write 3 entries, forcing 3 segments (seg0, seg1, seg2 active)
+	for i := 0; i < 3; i++ {
+		entry := &WalEntry{
+			Timestamp: time.Now(),
+			Operation: OperationSet,
+			Key:       fmt.Sprintf("key-%d", i),
+			Value:     "value",
+		}
+		if err := wal.Write(entry); err != nil {
+			t.Fatalf("Write() error = %v", err)
+		}
+	}
+
+	if len(wal.segments) != 3 {
+		t.Fatalf("expected 3 segments, got %d", len(wal.segments))
+	}
+
+	// Segment 0: maxSeqId=1, Segment 1: maxSeqId=2, Segment 2 (active): maxSeqId=0
+	// Delete segments with maxSeqId <= 1
+	if err := wal.DeleteSegmentsBefore(1); err != nil {
+		t.Fatalf("DeleteSegmentsBefore() error = %v", err)
+	}
+
+	if len(wal.segments) != 2 {
+		t.Fatalf("expected 2 segments after deletion, got %d", len(wal.segments))
+	}
+
+	// Segment 0 should be deleted
+	if _, exists := wal.segments[0]; exists {
+		t.Fatal("segment 0 should have been deleted")
+	}
+
+	// Segment 1 (maxSeqId=2) should remain
+	if _, exists := wal.segments[1]; !exists {
+		t.Fatal("segment 1 should still exist")
+	}
+}
+
+func TestDeleteSegmentsBeforeRetainsNewerSegments(t *testing.T) {
+	tempDir := t.TempDir()
+	opts := NewWALOptions().WithDataDir(tempDir).WithSyncMode(SyncImmediate)
+	opts.MaxSegmentSize = 1
+
+	wal, err := NewWAL(opts)
+	if err != nil {
+		t.Fatalf("NewWAL() error = %v", err)
+	}
+	defer wal.Close()
+
+	// Write 4 entries → 4 segments
+	for i := 0; i < 4; i++ {
+		entry := &WalEntry{
+			Timestamp: time.Now(),
+			Operation: OperationSet,
+			Key:       fmt.Sprintf("key-%d", i),
+			Value:     "value",
+		}
+		if err := wal.Write(entry); err != nil {
+			t.Fatalf("Write() error = %v", err)
+		}
+	}
+
+	// Segments: 0(max=1), 1(max=2), 2(max=3), 3(active, max=0)
+	// Delete only segments with maxSeqId <= 2
+	if err := wal.DeleteSegmentsBefore(2); err != nil {
+		t.Fatalf("DeleteSegmentsBefore() error = %v", err)
+	}
+
+	// Segments 0 and 1 deleted, 2 and 3 remain
+	if len(wal.segments) != 2 {
+		t.Fatalf("expected 2 segments, got %d", len(wal.segments))
+	}
+
+	if _, exists := wal.segments[2]; !exists {
+		t.Fatal("segment 2 (maxSeqId=3) should be retained")
+	}
+}
+
+func TestDeleteSegmentsBeforeNeverDeletesActiveSegment(t *testing.T) {
+	tempDir := t.TempDir()
+	opts := NewWALOptions().WithDataDir(tempDir).WithSyncMode(SyncImmediate)
+	opts.MaxSegmentSize = DefaultSegmentSize // no rotation
+
+	wal, err := NewWAL(opts)
+	if err != nil {
+		t.Fatalf("NewWAL() error = %v", err)
+	}
+	defer wal.Close()
+
+	entry := &WalEntry{
+		Timestamp: time.Now(),
+		Operation: OperationSet,
+		Key:       "key",
+		Value:     "value",
+	}
+	if err := wal.Write(entry); err != nil {
+		t.Fatalf("Write() error = %v", err)
+	}
+
+	activeID := wal.GetActiveSegmentID()
+
+	// Try to delete with seqId higher than anything written
+	if err := wal.DeleteSegmentsBefore(999); err != nil {
+		t.Fatalf("DeleteSegmentsBefore() error = %v", err)
+	}
+
+	// Active segment should still exist
+	if len(wal.segments) != 1 {
+		t.Fatalf("expected 1 segment, got %d", len(wal.segments))
+	}
+
+	if _, exists := wal.segments[activeID]; !exists {
+		t.Fatal("active segment should never be deleted")
+	}
+}
+
+func TestDeleteSegmentsBeforeNoOpWhenNoMatchingSegments(t *testing.T) {
+	tempDir := t.TempDir()
+	opts := NewWALOptions().WithDataDir(tempDir).WithSyncMode(SyncImmediate)
+	opts.MaxSegmentSize = 1
+
+	wal, err := NewWAL(opts)
+	if err != nil {
+		t.Fatalf("NewWAL() error = %v", err)
+	}
+	defer wal.Close()
+
+	// Write 2 entries → segments 0(max=1), 1(active)
+	for i := 0; i < 2; i++ {
+		entry := &WalEntry{
+			Timestamp: time.Now(),
+			Operation: OperationSet,
+			Key:       fmt.Sprintf("key-%d", i),
+			Value:     "value",
+		}
+		if err := wal.Write(entry); err != nil {
+			t.Fatalf("Write() error = %v", err)
+		}
+	}
+
+	initialCount := len(wal.segments)
+
+	// seqId=0 should match nothing (maxSeqId starts at 1)
+	if err := wal.DeleteSegmentsBefore(0); err != nil {
+		t.Fatalf("DeleteSegmentsBefore() error = %v", err)
+	}
+
+	if len(wal.segments) != initialCount {
+		t.Fatalf("expected %d segments unchanged, got %d", initialCount, len(wal.segments))
+	}
+}

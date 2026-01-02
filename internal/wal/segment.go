@@ -14,7 +14,7 @@ import (
 // or during periodic maintenance
 // Each segment has a unique ID and corresponds to a file on disk
 // File naming convention: 000001.wal, 000002.wal, etc.
-// Operations on segments are thread-safe and assume external synchronization and locking
+// Operations on segments are not-thread safe and require external synchronization and locking
 type WalSegment struct {
 	Id       uint32        // Segment identifier
 	Path     string        // Path to the segment file
@@ -107,5 +107,5 @@ func (segment *WalSegment) Close() error {
 
 // Size returns the current size of the segment
 func (segment *WalSegment) Size() int64 {
-	return segment.size
+	return atomic.LoadInt64(&segment.size)
 }

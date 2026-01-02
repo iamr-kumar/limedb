@@ -230,6 +230,7 @@ func (wal *WAL) rotateSegmentLocked() error {
 			// The goroutine that cleans up old segments will eventually remove this file
 			fmt.Printf("Failed to remove new segment file %s after rotation failure: %v\n", newSegment.Path, closeErr)
 		}
+		return fmt.Errorf("Failed to close active WAL segment during rotation: %w", err)
 	}
 	// Update WAL state
 	wal.segments[newSegment.Id] = newSegment
@@ -255,7 +256,7 @@ func (wal *WAL) DeleteSegmentsBefore(seqId uint64) error {
 		if segment == wal.activeSegment {
 			continue // never delete active segment
 		}
-		if segment.maxSeqId <= seqId {
+		if segment.maxSeqId != 0 && segment.maxSeqId <= seqId {
 			// Close segment before deletion but do not error out if already closed
 			segment.Close()
 			// Delete segment file
