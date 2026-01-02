@@ -177,8 +177,9 @@ func TestWALRotatesSegmentsWhenMaxSizeReached(t *testing.T) {
 		t.Fatalf("expected old segment %d to be closed", firstSegmentID)
 	}
 
-	if got := oldSegment.maxSeqId; got != atomic.LoadUint64(&wal.lastSeqId) {
-		t.Fatalf("old segment maxSeqId = %d, want %d", got, atomic.LoadUint64(&wal.lastSeqId))
+	// oldSegment should have maxSeqId = 1 (only entry1 was written before rotation)
+	if got := oldSegment.maxSeqId; got != entry1.SequenceID {
+		t.Fatalf("old segment maxSeqId = %d, want %d", got, entry1.SequenceID)
 	}
 
 	data2, err := entry2.Serialize()

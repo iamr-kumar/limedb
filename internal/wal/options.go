@@ -61,6 +61,12 @@ func (options *WALOptions) WithBufferSize(size int) *WALOptions {
 	return options
 }
 
+// WithMaxSegmentSize sets the maximum segment size for the WAL
+func (options *WALOptions) WithMaxSegmentSize(size int64) *WALOptions {
+	options.MaxSegmentSize = size
+	return options
+}
+
 // Derived paths
 
 // WALDir returns the directory path for the WAL

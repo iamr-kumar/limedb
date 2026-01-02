@@ -48,10 +48,10 @@ func (entry *WalEntry) Serialize() ([]byte, error) {
 	entry.Checksum = codec.CalculateChecksum(dataForChecksum)
 
 	// Serialize the entry
-	// Format: [TotalLen][SeqID][Checksum][Timestamp][ExpiresAt][Operation][KeyeLen][Key][ValueLen][Value]
+	// Format: [TotalLen][SeqID][Checksum][Timestamp][ExpiresAt][Operation][KeyLen][Key][ValueLen][Value]
 	keyLen := uint32(len(entry.Key))
 	valueLen := uint32(len(entry.Value))
-	// total lenght = 4 bytes (totalLen) + 8 bytes(SeqID) + 4 bytes (Checksum) + 8 bytes (Timestamp)
+	// total length = 4 bytes (totalLen) + 8 bytes (SeqID) + 4 bytes (Checksum) + 8 bytes (Timestamp)
 	// 									+ 8 bytes (ExpiresAt) + 1 bytes (Operation) + 4 bytes (KeyLen) + keyLen + 4 bytes (ValueLen) + valueLen
 	totalLen := uint32(4 + 8 + 4 + 8 + 8 + 1 + 4 + keyLen + 4 + valueLen)
 

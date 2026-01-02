@@ -27,7 +27,7 @@ type WAL struct {
 	maxSegmentSize    int64                  // max size of each segment in bytes (64MB default)
 	segmentBufferSize int                    // buffer size for segment writes
 
-	// SequenceId management
+	// SequenceID management
 	lastSeqId uint64 // next sequence ID to assign
 
 	syncMode     SyncMode      // sync mode
@@ -106,7 +106,7 @@ func (wal *WAL) Write(entry *WalEntry) error {
 	defer wal.mutex.Unlock()
 
 	if wal.closed {
-		return fmt.Errorf("cannot write to closed WAL")
+		return fmt.Errorf("Failed to write to closed WAL")
 	}
 
 	// Check if active segment needs rotation
@@ -218,13 +218,17 @@ func (wal *WAL) rotateSegmentLocked() error {
 	}
 
 	// Update maxSeqId for the old segment
-	wal.activeSegment.maxSeqId = atomic.LoadUint64(&wal.lastSeqId)
+	// Note: lastSeqId has already been incremented for the current entry being written,
+	// but that entry will go to the NEW segment, so old segment's max is lastSeqId - 1
+	wal.activeSegment.maxSeqId = atomic.LoadUint64(&wal.lastSeqId) - 1
 	// Close current active segment
 	if err := wal.activeSegment.Close(); err != nil {
 		// Cleanup new segment on failure
 		newSegment.Close()
-		if err := os.Remove(newSegment.Path); err != nil {
-			return fmt.Errorf("Failed to close active WAL segment: %w", err)
+		if closeErr := os.Remove(newSegment.Path); closeErr != nil {
+			// Let's swallow the close error if we already have an error
+			// The goroutine that cleans up old segments will eventually remove this file
+			fmt.Printf("Failed to remove new segment file %s after rotation failure: %v\n", newSegment.Path, closeErr)
 		}
 	}
 	// Update WAL state

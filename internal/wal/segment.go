@@ -4,10 +4,12 @@ import (
 	"bufio"
 	"fmt"
 	"os"
+	"path/filepath"
+	"sync/atomic"
 )
 
 // WalSegment represents a single segment file in the WAL
-// Segments are immutable once written, except for appending new entries
+// Each segment is an append-only file
 // These are rotated when they reach a certain size limit
 // or during periodic maintenance
 // Each segment has a unique ID and corresponds to a file on disk
@@ -27,7 +29,7 @@ type WalSegment struct {
 func NewWalSegment(id uint32, dir string, bufferSize int) (*WalSegment, error) {
 	// Create the underlying file
 	fileName := getSegmentFileName(id)
-	filePath := fmt.Sprintf("%s/%s", dir, fileName)
+	filePath := filepath.Join(dir, fileName)
 	file, err := os.OpenFile(filePath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open segment file %s: %w", filePath, err)
@@ -65,9 +67,7 @@ func (segment *WalSegment) Write(data []byte) error {
 		return fmt.Errorf("failed to write to segment %d: %w", segment.Id, err)
 	}
 
-	// This is thread safe under assumption
-	// that higher level WAL operations are synchronized
-	segment.size += int64(n)
+	atomic.AddInt64(&segment.size, int64(n))
 	return nil
 }
 
