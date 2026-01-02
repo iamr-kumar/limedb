@@ -1,7 +1,6 @@
 package wal
 
 import (
-	"bufio"
 	"fmt"
 	"os"
 	"sync"
@@ -18,23 +17,29 @@ const (
 
 // WAL represents the Write-Ahead Log structure
 type WAL struct {
-	mutex  sync.Mutex    // protects concurrent access
-	path   string        // path to the WAL file
-	file   *os.File      // underlying file
-	writer *bufio.Writer // buffered writer
+	mutex sync.Mutex // protects concurrent access
+	dir   string     // directory for WAL files
+
+	// segment management
+	activeSegment     *WalSegment            // current active segment
+	segments          map[uint32]*WalSegment // all segments by ID not yet merged or deleted
+	nextSegmentID     uint32                 // next segment ID to use
+	maxSegmentSize    int64                  // max size of each segment in bytes (64MB default)
+	segmentBufferSize int                    // buffer size for segment writes
+
+	// SequenceID management
+	lastSeqId uint64 // next sequence ID to assign
 
 	syncMode     SyncMode      // sync mode
 	syncInterval time.Duration // in milliseconds
-
-	bytesWritten int64     // total bytes written
-	entriesCount int64     // total entries written
-	lastSync     time.Time // last sync time
+	lastSync     time.Time     // last sync time
 
 	closed  bool           // indicates if WAL is closed
 	closeCh chan struct{}  // channel to signal closure
 	wg      sync.WaitGroup // wait group for background goroutines
 }
 
+// NewWAL creates a new Write-Ahead Log with the given options
 func NewWAL(options *WALOptions) (*WAL, error) {
 	if options == nil {
 		options = NewWALOptions()
@@ -55,21 +60,29 @@ func NewWAL(options *WALOptions) (*WAL, error) {
 		return nil, fmt.Errorf("Failed to create WAL directories: %w", err)
 	}
 
-	// Open WAL file
-	walPath := options.WALFilePath()
-	file, err := os.OpenFile(walPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
+	// Create new wal segment file
+	activeSegment, err := NewWalSegment(0, options.WALDir(), options.BufferSize)
 	if err != nil {
-		return nil, fmt.Errorf("Failed to open WAL file: %w", err)
+		return nil, fmt.Errorf("Failed to create initial WAL segment: %w", err)
 	}
 
+	// Initialize segments map
+	segmentsMap := make(map[uint32]*WalSegment)
+	segmentsMap[activeSegment.Id] = activeSegment
+
+	// TODO: Load existing segments from disk if needed and use that to initialize lastSeqId
 	wal := &WAL{
-		file:         file,
-		path:         walPath,
-		writer:       bufio.NewWriterSize(file, options.BufferSize),
-		syncMode:     options.SyncMode,
-		syncInterval: options.SyncInterval,
-		closeCh:      make(chan struct{}),
-		lastSync:     time.Now(),
+		dir:               options.WALDir(),
+		activeSegment:     activeSegment,
+		segments:          segmentsMap,
+		nextSegmentID:     activeSegment.Id + 1,
+		lastSeqId:         0,
+		maxSegmentSize:    options.MaxSegmentSize,
+		segmentBufferSize: options.BufferSize,
+		syncMode:          options.SyncMode,
+		syncInterval:      options.SyncInterval,
+		closeCh:           make(chan struct{}),
+		lastSync:          time.Now(),
 	}
 
 	// Start background sync goroutine if needed
@@ -82,6 +95,8 @@ func NewWAL(options *WALOptions) (*WAL, error) {
 
 // Write appends a WalEntry to the WAL
 func (wal *WAL) Write(entry *WalEntry) error {
+	// Assign SequenceID
+	entry.SequenceID = atomic.AddUint64(&wal.lastSeqId, 1)
 	data, err := entry.Serialize()
 	if err != nil {
 		return fmt.Errorf("Failed to serialize WAL entry: %w", err)
@@ -91,19 +106,20 @@ func (wal *WAL) Write(entry *WalEntry) error {
 	defer wal.mutex.Unlock()
 
 	if wal.closed {
-		return fmt.Errorf("WAL is closed")
+		return fmt.Errorf("Failed to write to closed WAL")
 	}
 
-	// Write data to buffer
-	n, err := wal.writer.Write(data)
-	if err != nil {
+	// Check if active segment needs rotation
+	if wal.activeSegment.Size() >= wal.maxSegmentSize {
+		if err := wal.rotateSegmentLocked(); err != nil {
+			return fmt.Errorf("Failed to rotate WAL segment: %w", err)
+		}
+	}
+
+	// write to active segment
+	if err := wal.activeSegment.Write(data); err != nil {
 		return fmt.Errorf("Failed to write to WAL: %w", err)
 	}
-
-	// Update metrics
-	// Thread safe updates
-	atomic.AddInt64(&wal.bytesWritten, int64(n))
-	atomic.AddInt64(&wal.entriesCount, 1)
 
 	// Sync immediately if in immediate mode
 	if wal.syncMode == SyncImmediate {
@@ -116,18 +132,9 @@ func (wal *WAL) Write(entry *WalEntry) error {
 // syncLocked performs a sync of the WAL file to disk
 // Assumes wal.mutex is already locked by the caller
 func (wal *WAL) syncLocked() error {
-	// flush buffer to file
-	// this only puts the data from buffer to OS cache
-	if err := wal.writer.Flush(); err != nil {
-		return fmt.Errorf("Failed to flush WAL buffer: %w", err)
+	if err := wal.activeSegment.Sync(); err != nil {
+		return fmt.Errorf("Failed to sync WAL: %w", err)
 	}
-
-	// explicitly sync file to disk
-	// forces OS to write data from cache to disk
-	if err := wal.file.Sync(); err != nil {
-		return fmt.Errorf("Failed to sync WAL file: %w", err)
-	}
-
 	wal.lastSync = time.Now()
 	return nil
 }
@@ -186,13 +193,78 @@ func (wal *WAL) Close() error {
 	// Wait for goroutines to finish
 	wal.wg.Wait()
 
-	// Final sync — no lock needed, we're the only accessor now
-	if err := wal.writer.Flush(); err != nil {
-		return fmt.Errorf("failed to flush WAL buffer: %w", err)
+	// Lock again to safely close segments
+	wal.mutex.Lock()
+	defer wal.mutex.Unlock()
+
+	// Close all segments
+	var firstErr error
+	for _, seg := range wal.segments {
+		if err := seg.Close(); err != nil && firstErr == nil {
+			firstErr = err
+		}
 	}
-	if err := wal.file.Sync(); err != nil {
-		return fmt.Errorf("failed to sync WAL file: %w", err)
+	return firstErr
+}
+
+// rotateSegmentLocked rotates the active segment
+// Assumes wal.mutex is already locked by the caller
+func (wal *WAL) rotateSegmentLocked() error {
+	// Create new wal segment file
+	newSegmentID := wal.nextSegmentID
+	newSegment, err := NewWalSegment(newSegmentID, wal.dir, wal.segmentBufferSize)
+	if err != nil {
+		return fmt.Errorf("Failed to create new WAL segment: %w", err)
 	}
 
-	return wal.file.Close()
+	// Update maxSeqId for the old segment
+	// Note: lastSeqId has already been incremented for the current entry being written,
+	// but that entry will go to the NEW segment, so old segment's max is lastSeqId - 1
+	wal.activeSegment.maxSeqId = atomic.LoadUint64(&wal.lastSeqId) - 1
+	// Close current active segment
+	if err := wal.activeSegment.Close(); err != nil {
+		// Cleanup new segment on failure
+		newSegment.Close()
+		if closeErr := os.Remove(newSegment.Path); closeErr != nil {
+			// Let's swallow the close error if we already have an error
+			// The goroutine that cleans up old segments will eventually remove this file
+			fmt.Printf("Failed to remove new segment file %s after rotation failure: %v\n", newSegment.Path, closeErr)
+		}
+		return fmt.Errorf("Failed to close active WAL segment during rotation: %w", err)
+	}
+	// Update WAL state
+	wal.segments[newSegment.Id] = newSegment
+	wal.activeSegment = newSegment
+	wal.nextSegmentID++
+
+	return nil
+}
+
+// GetActiveSegmentID returns the ID of the current active segment
+func (wal *WAL) GetActiveSegmentID() uint32 {
+	wal.mutex.Lock()
+	defer wal.mutex.Unlock()
+	return wal.activeSegment.Id
+}
+
+// DeleteSegmentsBefore deletes all segments with maxSeqId less than or equal to the given seqId
+func (wal *WAL) DeleteSegmentsBefore(seqId uint64) error {
+	wal.mutex.Lock()
+	defer wal.mutex.Unlock()
+
+	for id, segment := range wal.segments {
+		if segment == wal.activeSegment {
+			continue // never delete active segment
+		}
+		if segment.maxSeqId != 0 && segment.maxSeqId <= seqId {
+			// Close segment before deletion but do not error out if already closed
+			segment.Close()
+			// Delete segment file
+			if err := os.Remove(segment.Path); err != nil && !os.IsNotExist(err) {
+				return fmt.Errorf("Failed to delete WAL segment file %s: %w", segment.Path, err)
+			}
+			delete(wal.segments, id)
+		}
+	}
+	return nil
 }

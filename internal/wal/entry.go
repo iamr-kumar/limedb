@@ -28,7 +28,7 @@ type WalEntry struct {
 	// Unix timestamp in seconds (0 means no expiration)
 	ExpiresAt uint64
 	// Unique sequence ID for ordering
-	// SequenceID uint64
+	SequenceID uint64
 	// Checksum for data integrity
 	Checksum uint32
 }
@@ -48,12 +48,12 @@ func (entry *WalEntry) Serialize() ([]byte, error) {
 	entry.Checksum = codec.CalculateChecksum(dataForChecksum)
 
 	// Serialize the entry
-	// Format: [TotalLen][SeqID][Checksum][Timestamp][ExpiresAt][Operation][KeyeLen][Key][ValueLen][Value]
+	// Format: [TotalLen][SeqID][Checksum][Timestamp][ExpiresAt][Operation][KeyLen][Key][ValueLen][Value]
 	keyLen := uint32(len(entry.Key))
 	valueLen := uint32(len(entry.Value))
-	// total lenght = 4 bytes (totalLen) + 4 bytes (Checksum) + 8 bytes (Timestamp)
+	// total length = 4 bytes (totalLen) + 8 bytes (SeqID) + 4 bytes (Checksum) + 8 bytes (Timestamp)
 	// 									+ 8 bytes (ExpiresAt) + 1 bytes (Operation) + 4 bytes (KeyLen) + keyLen + 4 bytes (ValueLen) + valueLen
-	totalLen := uint32(4 + 4 + 8 + 8 + 1 + 4 + keyLen + 4 + valueLen)
+	totalLen := uint32(4 + 8 + 4 + 8 + 8 + 1 + 4 + keyLen + 4 + valueLen)
 
 	buffer := make([]byte, totalLen)
 	offset := 0
@@ -62,9 +62,9 @@ func (entry *WalEntry) Serialize() ([]byte, error) {
 	codec.EncodeUInt32ToBuffer(totalLen, buffer[offset:])
 	offset += 4
 
-	// // Write SequenceID
-	// codec.EncodeUInt64ToBuffer(entry.SequenceID, buffer[offset:])
-	// offset += 8
+	// Write SequenceID
+	codec.EncodeUInt64ToBuffer(entry.SequenceID, buffer[offset:])
+	offset += 8
 
 	// Write Checksum
 	codec.EncodeUInt32ToBuffer(entry.Checksum, buffer[offset:])
@@ -115,8 +115,8 @@ func DeserializeWalEntry(reader io.Reader) (*WalEntry, error) {
 	entry := &WalEntry{}
 
 	// Read SequenceID
-	// entry.SequenceID = codec.DecodeUInt64(entryBuf[offset:])
-	// offset += 8
+	entry.SequenceID = codec.DecodeUInt64(entryBuf[offset:])
+	offset += 8
 
 	// Read Checksum
 	entry.Checksum = codec.DecodeUInt32(entryBuf[offset:])

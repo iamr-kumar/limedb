@@ -21,13 +21,18 @@ func TestWALOptionsValidateErrors(t *testing.T) {
 		},
 		{
 			name: "invalid buffer size",
-			opts: WALOptions{DataDir: "./data", BufferSize: 0},
+			opts: WALOptions{DataDir: "./data", BufferSize: 0, MaxSegmentSize: DefaultSegmentSize},
 			want: "invalid value for parameter BufferSize",
 		},
 		{
 			name: "invalid sync interval",
-			opts: WALOptions{DataDir: "./data", BufferSize: DefaultBufferSize, SyncMode: SyncInterval, SyncInterval: 0},
+			opts: WALOptions{DataDir: "./data", BufferSize: DefaultBufferSize, MaxSegmentSize: DefaultSegmentSize, SyncMode: SyncInterval, SyncInterval: 0},
 			want: "invalid value for parameter SyncInterval",
+		},
+		{
+			name: "invalid max segment size",
+			opts: WALOptions{DataDir: "./data", BufferSize: DefaultBufferSize, MaxSegmentSize: 0},
+			want: "invalid value for parameter MaxSegmentSize",
 		},
 	}
 
@@ -55,6 +60,9 @@ func TestWALOptionsApplyDefaults(t *testing.T) {
 	if opts.SyncInterval != DefaultSyncInterval {
 		t.Fatalf("SyncInterval = %v, want %v", opts.SyncInterval, DefaultSyncInterval)
 	}
+	if opts.MaxSegmentSize != DefaultSegmentSize {
+		t.Fatalf("MaxSegmentSize = %d, want %d", opts.MaxSegmentSize, DefaultSegmentSize)
+	}
 }
 
 func TestWALOptionsEnsureDirectories(t *testing.T) {
@@ -78,10 +86,11 @@ func TestWALOptionsEnsureDirectories(t *testing.T) {
 
 func TestWALOptionsClone(t *testing.T) {
 	original := &WALOptions{
-		DataDir:      "./data",
-		SyncMode:     SyncInterval,
-		SyncInterval: 250 * time.Millisecond,
-		BufferSize:   1024,
+		DataDir:        "./data",
+		SyncMode:       SyncInterval,
+		SyncInterval:   250 * time.Millisecond,
+		BufferSize:     1024,
+		MaxSegmentSize: 2048,
 	}
 
 	clone := original.Clone()
@@ -89,17 +98,21 @@ func TestWALOptionsClone(t *testing.T) {
 		t.Fatal("Clone() returned the same pointer")
 	}
 
-	if clone.DataDir != original.DataDir || clone.SyncMode != original.SyncMode || clone.SyncInterval != original.SyncInterval || clone.BufferSize != original.BufferSize {
+	if clone.DataDir != original.DataDir || clone.SyncMode != original.SyncMode || clone.SyncInterval != original.SyncInterval || clone.BufferSize != original.BufferSize || clone.MaxSegmentSize != original.MaxSegmentSize {
 		t.Fatal("Clone() did not copy fields correctly")
 	}
 
 	clone.DataDir = filepath.Join(original.DataDir, "nested")
 	clone.BufferSize = 2048
+	clone.MaxSegmentSize = 4096
 
 	if original.DataDir == clone.DataDir {
 		t.Fatal("mutating clone should not affect original DataDir")
 	}
 	if original.BufferSize == clone.BufferSize {
 		t.Fatal("mutating clone should not affect original BufferSize")
+	}
+	if original.MaxSegmentSize == clone.MaxSegmentSize {
+		t.Fatal("mutating clone should not affect original MaxSegmentSize")
 	}
 }
