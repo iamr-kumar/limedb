@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"os"
 	"sync"
-	"sync/atomic"
 	"time"
 )
 
@@ -27,8 +26,7 @@ type WAL struct {
 	maxSegmentSize    int64                  // max size of each segment in bytes (64MB default)
 	segmentBufferSize int                    // buffer size for segment writes
 
-	// SequenceID management
-	lastSeqId uint64 // next sequence ID to assign
+	lastWrittenSeqID uint64 // last written sequence ID
 
 	syncMode     SyncMode      // sync mode
 	syncInterval time.Duration // in milliseconds
@@ -70,15 +68,15 @@ func NewWAL(options *WALOptions) (*WAL, error) {
 	segmentsMap := make(map[uint32]*WalSegment)
 	segmentsMap[activeSegment.Id] = activeSegment
 
-	// TODO: Load existing segments from disk if needed and use that to initialize lastSeqId
+	// TODO: Load existing segments from disk if needed and use that to initialize lastWrittenSeqID
 	wal := &WAL{
 		dir:               options.WALDir(),
 		activeSegment:     activeSegment,
 		segments:          segmentsMap,
 		nextSegmentID:     activeSegment.Id + 1,
-		lastSeqId:         0,
 		maxSegmentSize:    options.MaxSegmentSize,
 		segmentBufferSize: options.BufferSize,
+		lastWrittenSeqID:  0,
 		syncMode:          options.SyncMode,
 		syncInterval:      options.SyncInterval,
 		closeCh:           make(chan struct{}),
@@ -95,8 +93,10 @@ func NewWAL(options *WALOptions) (*WAL, error) {
 
 // Write appends a WalEntry to the WAL
 func (wal *WAL) Write(entry *WalEntry) error {
-	// Assign SequenceID
-	entry.SequenceID = atomic.AddUint64(&wal.lastSeqId, 1)
+	if entry.SequenceID == 0 {
+		return fmt.Errorf("Failed to write WAL entry: missing SequenceID")
+	}
+
 	data, err := entry.Serialize()
 	if err != nil {
 		return fmt.Errorf("Failed to serialize WAL entry: %w", err)
@@ -120,6 +120,8 @@ func (wal *WAL) Write(entry *WalEntry) error {
 	if err := wal.activeSegment.Write(data); err != nil {
 		return fmt.Errorf("Failed to write to WAL: %w", err)
 	}
+
+	wal.lastWrittenSeqID = entry.SequenceID
 
 	// Sync immediately if in immediate mode
 	if wal.syncMode == SyncImmediate {
@@ -218,9 +220,9 @@ func (wal *WAL) rotateSegmentLocked() error {
 	}
 
 	// Update maxSeqId for the old segment
-	// Note: lastSeqId has already been incremented for the current entry being written,
-	// but that entry will go to the NEW segment, so old segment's max is lastSeqId - 1
-	wal.activeSegment.maxSeqId = atomic.LoadUint64(&wal.lastSeqId) - 1
+	// Note: sequence IDs are assigned outside WAL. We track the last written sequence ID
+	// for segment metadata and retention decisions.
+	wal.activeSegment.maxSeqId = wal.lastWrittenSeqID
 	// Close current active segment
 	if err := wal.activeSegment.Close(); err != nil {
 		// Cleanup new segment on failure

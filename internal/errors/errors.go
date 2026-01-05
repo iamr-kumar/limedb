@@ -7,6 +7,7 @@ import (
 
 var (
 	ErrInvalidWalEntry      = errors.New("invalid WAL entry")
+	ErrMemtableFull         = errors.New("memtable is full, new one would be created")
 	ErrMissingRequiredField = func(field string) error {
 		return errors.New("missing required field: " + field)
 	}
