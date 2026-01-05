@@ -5,10 +5,17 @@ import (
 	"os"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/ritik/limedb/internal/sequence"
 )
+
+func newTestSeqManager() *sequence.SequenceManager {
+	m := &sequence.SequenceManager{}
+	m.Init(1)
+	return m
+}
 
 func getLastSync(w *WAL) time.Time {
 	w.mutex.Lock()
@@ -26,12 +33,14 @@ func TestWALWriteSyncImmediate(t *testing.T) {
 		t.Fatalf("NewWAL() error = %v", err)
 	}
 	defer wal.Close()
+	seq := newTestSeqManager()
 
 	entry := &WalEntry{
-		Timestamp: time.Now(),
-		Operation: OperationSet,
-		Key:       "key1",
-		Value:     "value1",
+		Timestamp:  time.Now(),
+		Operation:  OperationSet,
+		Key:        "key1",
+		Value:      "value1",
+		SequenceID: seq.Next(),
 	}
 
 	initialSync := getLastSync(wal)
@@ -95,11 +104,14 @@ func TestWALClosePreventsFurtherWrites(t *testing.T) {
 		t.Fatalf("NewWAL() error = %v", err)
 	}
 
+	seq := newTestSeqManager()
+
 	entry := &WalEntry{
-		Timestamp: time.Now(),
-		Operation: OperationSet,
-		Key:       "key-close",
-		Value:     "value-close",
+		Timestamp:  time.Now(),
+		Operation:  OperationSet,
+		Key:        "key-close",
+		Value:      "value-close",
+		SequenceID: seq.Next(),
 	}
 
 	if err := wal.Write(entry); err != nil {
@@ -139,19 +151,22 @@ func TestWALRotatesSegmentsWhenMaxSizeReached(t *testing.T) {
 		t.Fatalf("NewWAL() error = %v", err)
 	}
 	defer wal.Close()
+	seq := newTestSeqManager()
 
 	entry1 := &WalEntry{
-		Timestamp: time.Now(),
-		Operation: OperationSet,
-		Key:       "key-1",
-		Value:     "value-1",
+		Timestamp:  time.Now(),
+		Operation:  OperationSet,
+		Key:        "key-1",
+		Value:      "value-1",
+		SequenceID: seq.Next(),
 	}
 
 	entry2 := &WalEntry{
-		Timestamp: time.Now(),
-		Operation: OperationSet,
-		Key:       "key-2",
-		Value:     "value-2",
+		Timestamp:  time.Now(),
+		Operation:  OperationSet,
+		Key:        "key-2",
+		Value:      "value-2",
+		SequenceID: seq.Next(),
 	}
 
 	if err := wal.Write(entry1); err != nil {
@@ -203,6 +218,7 @@ func TestWALConcurrentWritesAssignUniqueSequenceIDs(t *testing.T) {
 		t.Fatalf("NewWAL() error = %v", err)
 	}
 	defer wal.Close()
+	seq := newTestSeqManager()
 
 	const writers = 5
 	const perWriter = 25
@@ -217,10 +233,11 @@ func TestWALConcurrentWritesAssignUniqueSequenceIDs(t *testing.T) {
 			defer wg.Done()
 			for j := 0; j < perWriter; j++ {
 				entry := &WalEntry{
-					Timestamp: time.Now(),
-					Operation: OperationSet,
-					Key:       fmt.Sprintf("k-%d-%d", id, j),
-					Value:     "v",
+					Timestamp:  time.Now(),
+					Operation:  OperationSet,
+					Key:        fmt.Sprintf("k-%d-%d", id, j),
+					Value:      "v",
+					SequenceID: seq.Next(),
 				}
 
 				if err := wal.Write(entry); err != nil {
@@ -243,10 +260,6 @@ func TestWALConcurrentWritesAssignUniqueSequenceIDs(t *testing.T) {
 		seen[seq] = struct{}{}
 	}
 
-	if got := atomic.LoadUint64(&wal.lastSeqId); got != uint64(total) {
-		t.Fatalf("lastSeqId = %d, want %d", got, total)
-	}
-
 	if len(seen) != total {
 		t.Fatalf("unique SequenceIDs = %d, want %d", len(seen), total)
 	}
@@ -262,14 +275,16 @@ func TestDeleteSegmentsBeforeDeletesOldSegments(t *testing.T) {
 		t.Fatalf("NewWAL() error = %v", err)
 	}
 	defer wal.Close()
+	seq := newTestSeqManager()
 
 	// Write 3 entries, forcing 3 segments (seg0, seg1, seg2 active)
 	for i := 0; i < 3; i++ {
 		entry := &WalEntry{
-			Timestamp: time.Now(),
-			Operation: OperationSet,
-			Key:       fmt.Sprintf("key-%d", i),
-			Value:     "value",
+			Timestamp:  time.Now(),
+			Operation:  OperationSet,
+			Key:        fmt.Sprintf("key-%d", i),
+			Value:      "value",
+			SequenceID: seq.Next(),
 		}
 		if err := wal.Write(entry); err != nil {
 			t.Fatalf("Write() error = %v", err)
@@ -311,14 +326,16 @@ func TestDeleteSegmentsBeforeRetainsNewerSegments(t *testing.T) {
 		t.Fatalf("NewWAL() error = %v", err)
 	}
 	defer wal.Close()
+	seq := newTestSeqManager()
 
 	// Write 4 entries → 4 segments
 	for i := 0; i < 4; i++ {
 		entry := &WalEntry{
-			Timestamp: time.Now(),
-			Operation: OperationSet,
-			Key:       fmt.Sprintf("key-%d", i),
-			Value:     "value",
+			Timestamp:  time.Now(),
+			Operation:  OperationSet,
+			Key:        fmt.Sprintf("key-%d", i),
+			Value:      "value",
+			SequenceID: seq.Next(),
 		}
 		if err := wal.Write(entry); err != nil {
 			t.Fatalf("Write() error = %v", err)
@@ -351,12 +368,14 @@ func TestDeleteSegmentsBeforeNeverDeletesActiveSegment(t *testing.T) {
 		t.Fatalf("NewWAL() error = %v", err)
 	}
 	defer wal.Close()
+	seq := newTestSeqManager()
 
 	entry := &WalEntry{
-		Timestamp: time.Now(),
-		Operation: OperationSet,
-		Key:       "key",
-		Value:     "value",
+		Timestamp:  time.Now(),
+		Operation:  OperationSet,
+		Key:        "key",
+		Value:      "value",
+		SequenceID: seq.Next(),
 	}
 	if err := wal.Write(entry); err != nil {
 		t.Fatalf("Write() error = %v", err)
@@ -389,14 +408,16 @@ func TestDeleteSegmentsBeforeNoOpWhenNoMatchingSegments(t *testing.T) {
 		t.Fatalf("NewWAL() error = %v", err)
 	}
 	defer wal.Close()
+	seq := newTestSeqManager()
 
 	// Write 2 entries → segments 0(max=1), 1(active)
 	for i := 0; i < 2; i++ {
 		entry := &WalEntry{
-			Timestamp: time.Now(),
-			Operation: OperationSet,
-			Key:       fmt.Sprintf("key-%d", i),
-			Value:     "value",
+			Timestamp:  time.Now(),
+			Operation:  OperationSet,
+			Key:        fmt.Sprintf("key-%d", i),
+			Value:      "value",
+			SequenceID: seq.Next(),
 		}
 		if err := wal.Write(entry); err != nil {
 			t.Fatalf("Write() error = %v", err)
