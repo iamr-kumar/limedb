@@ -54,7 +54,7 @@ func NewSkipList() *SkipList {
 
 // Insert inserts a key-value pair into the skip list
 // If the key already exists, its value is updated
-func (s *SkipList) Insert(key, value []byte) (prev []byte, replaced bool) {
+func (s *SkipList) Insert(key, value []byte) {
 	// Get the lock for writing
 	s.mutex.Lock()
 	defer s.mutex.Unlock()
@@ -76,9 +76,8 @@ func (s *SkipList) Insert(key, value []byte) (prev []byte, replaced bool) {
 	// check if the key already exists, if so update its value
 	target := current.forward[0]
 	if target != nil && bytes.Equal(target.key, key) {
-		prev := target.value
 		target.value = value
-		return prev, true
+		return
 	}
 
 	// get the level for the new node
@@ -106,8 +105,6 @@ func (s *SkipList) Insert(key, value []byte) (prev []byte, replaced bool) {
 		newNode.forward[i] = update[i].forward[i]
 		update[i].forward[i] = newNode
 	}
-
-	return nil, false
 }
 
 // Get retrieves the value associated with the given key
