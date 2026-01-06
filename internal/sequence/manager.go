@@ -19,3 +19,11 @@ func (manager *SequenceManager) Init(start uint64) {
 func (manager *SequenceManager) Next() uint64 {
 	return atomic.AddUint64(&manager.next, 1) - 1
 }
+
+// NextBatch returns the starting sequence ID for a batch of the given count
+// and increments the internal counter by that count.
+// Group commit operations can use this to reserve a block of sequence IDs.
+// Single atomic ops vs N atomic ops improves performance under high concurrency.
+func (manager *SequenceManager) NextBatch(count uint64) uint64 {
+	return atomic.AddUint64(&manager.next, count) - count
+}
