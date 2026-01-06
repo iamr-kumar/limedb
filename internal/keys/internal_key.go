@@ -26,15 +26,10 @@ type InternalKey struct {
 // Encode encodes the InternalKey into a byte slice.
 func (ik *InternalKey) Encode() []byte {
 	encoded := make([]byte, len(ik.UserKey)+8+1)
-	// format: [Type(1 byte) | SequenceID(8 bytes) | UserKey(variable length)
-	offset := 0
-	encoded[offset] = byte(ik.Type)
-
-	offset++
-	codec.EncodeUInt64ToBuffer(ik.SequenceID, encoded[offset:])
-
-	offset += 8
-	copy(encoded[offset:], ik.UserKey)
+	// format: [Type(1 byte) | SequenceID(8 bytes) | UserKey(variable length)]
+	encoded[0] = byte(ik.Type)
+	codec.EncodeUInt64ToBuffer(ik.SequenceID, encoded[1:9])
+	copy(encoded[9:], ik.UserKey)
 	return encoded
 }
 
@@ -45,20 +40,17 @@ func DecodeInternalKey(data []byte) (*InternalKey, error) {
 	}
 
 	ik := &InternalKey{}
-	offset := 0
-	ik.Type = ValueType(data[offset])
+	ik.Type = ValueType(data[0])
 
 	// verify that type is valid
 	if ik.Type != TypeValue && ik.Type != TypeDeletion {
 		return nil, errors.ErrInvalidInternalKey
 	}
 
-	offset++
-	ik.SequenceID = codec.DecodeUInt64(data[offset:])
+	ik.SequenceID = codec.DecodeUInt64(data[1:9])
 
-	offset += 8
-	ik.UserKey = make([]byte, len(data)-offset)
-	copy(ik.UserKey, data[offset:offset+len(ik.UserKey)])
+	ik.UserKey = make([]byte, len(data)-9)
+	copy(ik.UserKey, data[9:])
 	return ik, nil
 }
 
@@ -85,16 +77,10 @@ func CompareInternalKeys(keyA, keyB *InternalKey) int {
 
 // ComesBefore returns true if ik comes before other in the internal key ordering.
 func (ik *InternalKey) ComesBefore(other *InternalKey) bool {
-	if cmp := CompareInternalKeys(ik, other); cmp != 0 {
-		return cmp < 0
-	}
-	return false
+	return CompareInternalKeys(ik, other) < 0
 }
 
 // ComesAfter returns true if ik comes after other in the internal key ordering.
 func (ik *InternalKey) ComesAfter(other *InternalKey) bool {
-	if cmp := CompareInternalKeys(ik, other); cmp != 0 {
-		return cmp > 0
-	}
-	return false
+	return CompareInternalKeys(ik, other) > 0
 }

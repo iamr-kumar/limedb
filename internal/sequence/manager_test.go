@@ -443,7 +443,7 @@ func TestSequenceManager_BatchOverflow(t *testing.T) {
 
 	// Next call will have wrapped around
 	got = manager.Next()
-	// After adding 10 to MaxUint64-5, we get MaxUint64+5 which wraps to 4
+	// (MaxUint64-5) + 10 overflows uint64, so (MaxUint64+5) mod 2^64 = 4
 	if got != 4 {
 		t.Errorf("Next() after batch overflow = %d, want 4", got)
 	}
