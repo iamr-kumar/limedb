@@ -53,7 +53,9 @@ func NewSkipList() *SkipList {
 }
 
 // Insert inserts a key-value pair into the skip list
-// If the key already exists, its value is updated
+// Here key references to the InternalKey encoded byte slice
+// The keys are sorted in lexicographical order with UserKey asc | SeqID desc
+// This ensures that recently added keys appear before older versions of the same UserKey
 func (s *SkipList) Insert(key, value []byte) {
 	// Get the lock for writing
 	s.mutex.Lock()
@@ -130,6 +132,28 @@ func (s *SkipList) Get(key []byte) ([]byte, bool) {
 	}
 
 	return nil, false
+}
+
+// FindGreaterOrEqual returns the first (key,value) whose key >= target.
+// This is used for finding the most recent version of a user key
+func (s *SkipList) FindGreaterOrEqual(target []byte) ([]byte, []byte, bool) {
+	s.mutex.RLock()
+	defer s.mutex.RUnlock()
+
+	current := s.head
+	for i := s.level - 1; i >= 0; i-- {
+		for current.forward[i] != nil && bytes.Compare(current.forward[i].key, target) < 0 {
+			current = current.forward[i]
+		}
+	}
+
+	current = current.forward[0]
+	if current == nil {
+		return nil, nil, false
+	}
+	// Tombstone entries are also returned here
+	// should be handled by the caller
+	return current.key, current.value, true
 }
 
 // Delete deletes the node with the given key from the skip list
