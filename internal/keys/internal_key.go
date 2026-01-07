@@ -26,10 +26,14 @@ type InternalKey struct {
 // Encode encodes the InternalKey into a byte slice.
 func (ik *InternalKey) Encode() []byte {
 	encoded := make([]byte, len(ik.UserKey)+8+1)
-	// format: [Type(1 byte) | SequenceID(8 bytes) | UserKey(variable length)]
-	encoded[0] = byte(ik.Type)
-	codec.EncodeUInt64ToBuffer(ik.SequenceID, encoded[1:9])
-	copy(encoded[9:], ik.UserKey)
+	// format: [UserKey(variable)][InverseSeqID(8 bytes)][Type(1 byte)]
+	// UserKey comes first for lexicographical ordering followed by InverseSeqID and Type
+	// InverseSeqID = ^SequenceID to ensure higher sequence IDs sort before lower ones
+	// Type is last byte to distinguish between value and tombstone for same UserKey+SeqID
+	copy(encoded, ik.UserKey)
+	invSeqID := ^ik.SequenceID
+	codec.EncodeUInt64ToBuffer(invSeqID, encoded[len(ik.UserKey):len(ik.UserKey)+8])
+	encoded[len(encoded)-1] = byte(ik.Type)
 	return encoded
 }
 
@@ -39,19 +43,24 @@ func DecodeInternalKey(data []byte) (*InternalKey, error) {
 		return nil, errors.ErrInvalidInternalKey
 	}
 
-	ik := &InternalKey{}
-	ik.Type = ValueType(data[0])
-
-	// verify that type is valid
-	if ik.Type != TypeValue && ik.Type != TypeDeletion {
+	t := ValueType(data[len(data)-1])
+	if t != TypeValue && t != TypeDeletion {
 		return nil, errors.ErrInvalidInternalKey
 	}
 
-	ik.SequenceID = codec.DecodeUInt64(data[1:9])
+	// last 9 bytes are [InverseSeqID(8 bytes)][Type(1 byte)]
+	invSeqID := codec.DecodeUInt64(data[len(data)-9 : len(data)-1])
+	seqID := ^invSeqID
 
-	ik.UserKey = make([]byte, len(data)-9)
-	copy(ik.UserKey, data[9:])
-	return ik, nil
+	userKeyLen := len(data) - 9
+	uk := make([]byte, userKeyLen)
+	copy(uk, data[:userKeyLen])
+
+	return &InternalKey{
+		UserKey:    uk,
+		SequenceID: seqID,
+		Type:       t,
+	}, nil
 }
 
 // CompareInternalKeys compares two encoded internal keys.
